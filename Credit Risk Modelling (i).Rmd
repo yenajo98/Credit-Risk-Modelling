@@ -1,0 +1,250 @@
+---
+title: "Credit Risk Modelling"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Credit Risk
+
+Credit Risk defines as the risk of default on a debt that may arise from a borrower failing to make required payments. The credit that companies offer to their clients has associated with the risk that the clients may not pay their invoices. Thus, risk classification can play an essential factor in many companies, such as banks and insurance companies. Companies using customers information to classify the risk of the new customers based on some algorithm such as the k-nearest neighbor algorithm or decision tree. There are two types of Credit risks:
+
+* **Good Risk**: An investment that one believes is likely to be profitable. The term most often refers to a loan made to a creditworthy person or company. Good risks are considered exceptionally likely to be repaid.
+
+* **Bad Risk**: A loan that is unlikely to be repaid because of bad credit history, insufficient income, or some other reason. A bad risk increases the risk to the lender and the likelihood of default on the part of the borrower.
+
+### Objective
+
+* classifying the customers (based on their attributes) as either *good* or *bad* credit risk 
+
+#### About the dataset
+
+* The real-world `risk` dataset. In the R package [`liver`](https://CRAN.R-project.org/package=liver). 
+
+This dataset has 6 variables in which the variable *risk* is the target variable along with 5 predictors, *mortgage*, *number of loans*, *age*, *marital status*, and *income*. In the target variable, customers are classified as either “*good risk*” or “*bad risk*”. 
+
+### classification algorithms:
+
+* *CART* algorithm,
+* *C5.0* algorithm,
+* *Random Forest* algorithm,
+* *kNN* algorithm.
+
+### evaluating the accuracy of the predictions with:
+
+* Confusion Matrix,
+* MSE,
+* ROC curve,
+* AUC (Area Under the ROC curve).
+
+### 1 Understading the dataset
+
+
+```{r}
+library(liver)
+library(pROC)
+```
+
+
+```{r}
+data(risk)
+str(risk)
+summary(risk)
+
+find.na(risk)
+```
+
+ There are 6 variables, with 246 observations. "Income" is a type of numeric variable, "age" and "nr.loans" are integers." Marital", "mortgage", and "risk" are identified as a factor variable. There is no missing values identified. 
+
+```{r}
+table(risk$age)
+table(risk$income)
+table(risk$nr.loans)
+```
+
+ There are also no missing values for Age, Income and Nr.Loans.
+
+### 2 Data Partitioning 
+
+Partition the dataset randomly into a training set (80%) and a test set (20%). 
+
+```{r}
+set.seed( 5 )
+
+data_sets = partition( data = risk, prob = c( 0.8, 0.2 ) )
+
+train_set = data_sets $ part1
+test_set  = data_sets $ part2
+
+actual_test  = test_set $ risk
+```
+
+### 3 Validating the partition 
+
+Using two sample z-test
+
+```{r}
+x1 = sum( train_set $ risk == "good risk" )
+x2 = sum( test_set  $ risk == "good risk" )
+
+n1 = nrow( train_set )
+n2 = nrow( test_set  )
+
+prop.test( x = c( x1, x2 ), n = c( n1, n2 ) )
+```
+
+
+ Based on two sample z-test (proportion test), we can check that p = 0.4579. With alpha = 0.05, we do not reject the null hypothesis that there is no difference between the proportion of customers with "good risk" between the test set and the train set. We can validate that the partition has been successfully made.
+
+### 4 Decision Tree, CART, C5.0 and Random Forest 
+
+
+```{r, message=FALSE, warning=FALSE}
+library( rpart )         # For the "CART" algorithm
+library( rpart.plot )    # For ploting decition trees
+library( C50 )           # For the "C5.0" algorithm
+library( randomForest )  # For the "Random Forest" algorithm
+library( liver )         # For the "adult" dataset & the "partition" function
+library( pROC )          # For ROC plot using "plot.roc" function
+```
+
+* CART
+
+```{r}
+#CART algorithm
+
+set.seed( 5 )
+
+formula = risk ~ mortgage + nr.loans + age + marital + income 
+
+tree_cart = rpart( formula = formula, data = train_set, method = "class" )
+
+print( tree_cart )
+```
+
+```{r}
+rpart.plot( tree_cart, type = 4, extra = 104 )
+```
+
+* C5.0
+
+```{r}
+#C5.0 algorithm
+
+set.seed( 5 )
+
+tree_C50 = C5.0( risk ~ mortgage + nr.loans + age + marital + income, data = train_set  ) 
+plot( tree_C50 )
+```
+
+* Random Forest
+
+```{r}
+#Random Forest
+set.seed( 5 )
+
+random_forest = randomForest( formula = formula, data = train_set, ntree = 10 )
+```
+
+Based on the training dataset and the above models predict for the test set. For the prediction, you could use the `predict` function; Similar to the exercises of week 5 in part 1.6.
+
+```{r}
+set.seed(5)
+formula = risk ~ mortgage + nr.loans + age + marital + income
+
+#### Prediction with CART (Confusion Matrix / MSE)
+
+tree_cart = rpart( formula = formula, data = train_set, method = "class" )
+
+predict_cart = predict( tree_cart, test_set, type = "class" )
+
+conf.mat( predict_cart, actual_test )
+
+( mse_cart = mse( predict_cart, actual_test ) )
+```
+
+```{r}
+set.seed(5)
+#### Prediction with C5.0 (Confusion Matrix / MSE)
+
+tree_C50 = C5.0( formula = formula, data = train_set, type = "class" ) 
+
+predict_C50 = predict( tree_C50, test_set, type = "class" )
+
+conf.mat( predict_C50, actual_test )
+
+( mse_C50 = mse( predict_C50, actual_test ) )
+```
+
+```{r}
+set.seed(5)
+####Prediction with random forest (Confusion Matrix / MSE)
+
+random_forest = randomForest( formula = formula, data = train_set, ntree = 10 )
+
+predict_random_forest = predict( random_forest, test_set )
+
+conf.mat( predict_random_forest, actual_test )
+
+( mse_random_forest = mse( actual_test, predict_random_forest ) )
+```
+
+
+* the KNN algorithm
+
+Finding the k-nearest neighbor for the test set, based on the training dataset. 
+ Our data contains both categorical and continuous variables. In this case, the min-max normalization are preferred.
+ 
+```{r}
+#Finding optimal k
+kNN.plot( formula, train = train_set, test = test_set, transform = "minmax", 
+          k.max = 30, set.seed = 5 )
+```
+
+ The optimal value of k is either 1 or 2. Using this k-value will give the most accurate results (lowest error rate) than the other k values. We will go for k = 1.
+ 
+```{r}
+set.seed( 5 )
+formula = risk ~ mortgage + nr.loans + age + marital + income 
+predict_knn = kNN( formula, train = train_set, test = test_set, transform = "minmax", k = 1)
+```
+ 
+```{r}
+#Prediction with kNN
+
+#Confusion matrix kNN
+conf.mat(predict_knn, actual_test)
+conf.mat.plot(predict_knn, actual_test, main="kNN with k=1")
+
+#MSE kNN
+(MSE_knn = mse( predict_knn, actual_test))
+```
+### Model Evaluation 
+
+Based on the results so far, which of the four classification algorithms is more suitable here for the *risk* dataset based on:
+
+* Confusion Matrix,
+* MSE,
+* ROC curve,
+* AUC (Area Under the ROC curve).
+
+```{r}
+#ROC curve & AUC
+
+prob_cart = predict( tree_cart, test_set, type = "prob" )[ , 1 ]
+prob_C50 = predict( tree_C50, test_set, type = "prob" )[ , 1 ]
+prob_random_forest = predict( random_forest, test_set, type = "prob" )[ , 1 ]
+prob_knn = kNN( formula, train = train_set, test = test_set, transform = "minmax", k = 1, prob = TRUE )[ , 1 ]
+
+
+plot.roc( actual_test, prob_cart, legacy.axes = T, col = "black", lwd = 2,
+          xlab = "False Positive Rate", ylab = "True Positive Rate", print.auc = T, print.auc.y = 0.45 )
+plot.roc( actual_test, prob_C50, legacy.axes = T, add = T, col = "red", print.auc = T, print.auc.y = 0.40 )
+plot.roc( actual_test, prob_random_forest, legacy.axes = T, add = T, col = "blue", print.auc = T, print.auc.y = 0.35 )
+#plot.roc(actual_test, prob_knn, legacy.axes = T, add = T, col = "green", print.auc = T, print.auc.y = 0.30)
+```
+
+ In the above plot, **black** curve is for CART algorithm, <span style="color:red">**red**</span> curve is for C50 algorithm, <span style="color:blue">**blue**</span> curve is for random forest algorithm, <span style="color:green">**green**</span> is for kNN algorithm.
+
+ According to the above confusion matrices, the algorithm with the highest correct prediction cases is random forest (N = 58), followed by CART (N = 57), C5.0 (N = 55), and kNN (N = 54) by order. Similarly, random forest shows the lowest MSE (0.0333), followed by CART (0.05), C5.0 (0.0833), and kNN (0.1). Based on the ROC curve, it is clear that the blue line (random forest) is lying on the most upper-left side. Accordingly, the area under the ROC curve (AUC) is the largest in the blue line (random forest, 0.997). However, AUC result is different from the other evaluation methods ; the second largest area is the C5.0 algorithm (red, 0.987), followed by CART (black,0.978), and kNN (green, 0.896). Overall, all the models have high prediction power as they are almost close to 1, which means perfect accuracy. To sum up, in common, all the four evaluation methods show that the random forest is the most accurate model.
+
